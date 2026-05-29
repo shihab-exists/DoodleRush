@@ -183,3 +183,38 @@ app.get('/api/leaderboard', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🏃💨 Doodle Rush server running on http://localhost:${PORT}`);
 });
+
+// bKash payment verification (stores TrxIDs for manual review)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id TEXT NOT NULL,
+    skin_index INTEGER NOT NULL,
+    trx_id TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+const insertPayment = db.prepare(
+  'INSERT INTO payments (player_id, skin_index, trx_id) VALUES (?, ?, ?)'
+);
+
+app.post('/api/bkash', (req, res) => {
+  const { player_id, skin_index, trx_id } = req.body;
+  if (!validateId(player_id)) return res.status(400).json({ error: 'Invalid player ID' });
+  if (typeof skin_index !== 'number' || skin_index < 0 || skin_index >= 6) {
+    return res.status(400).json({ error: 'Invalid skin' });
+  }
+  if (!trx_id || trx_id.length < 6) {
+    return res.status(400).json({ error: 'Invalid TrxID' });
+  }
+  insertPayment.run(player_id, skin_index, trx_id);
+  res.json({ ok: true });
+});
+
+// View pending payments (admin)
+app.get('/api/admin/payments', (req, res) => {
+  const rows = db.prepare('SELECT * FROM payments ORDER BY created_at DESC LIMIT 100').all();
+  res.json(rows);
+});
