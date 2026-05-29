@@ -43,7 +43,7 @@ let state='menu';
 let score=0,best=0,camY=0,fr=0,runTime=0;
 let doodler,platforms,bullets,enemies,particles,shields,lavaBlasts;
 let gap,menuT=0;
-let mL=false,mR=false,mF=false;
+let mL=false,mR=false;
 const isMob=('ontouchstart'in window)||navigator.maxTouchPoints>0;
 
 // ══════ SHAKE ══════
@@ -462,7 +462,7 @@ class Doodler{
     if(K.ArrowLeft||K.KeyA||mL){this.x-=sp;this.goLeft=true}
     if(K.ArrowRight||K.KeyD||mR){this.x+=sp;this.goLeft=false}
     if(K.KeyF){this.shoot(mx,my+camY)}
-    if(mF){this.shoot(this.x+this.w/2,this.y-100)}
+    // mobile shoot removed
     if(settings.tilt&&tiltActive&&Math.abs(tiltX)>.08){this.x+=tiltX*sp*1.2;if(tiltX<-.08)this.goLeft=true;if(tiltX>.08)this.goLeft=false}
     if(this.velocity>0&&!this.rocketMode){
       for(let p of plats){
@@ -809,20 +809,20 @@ function drawHUD(){
 }
 
 // ══════ MOBILE ══════
-const mobBtns=[{id:'left',l:'◀',x:15,y:H-75,w:65,h:55},{id:'right',l:'▶',x:90,y:H-75,w:65,h:55},{id:'fire',l:'🔥',x:W-80,y:H-75,w:65,h:55}];
+const mobBtns=[{id:'left',l:'◀',x:15,y:H-85,w:80,h:65},{id:'right',l:'▶',x:W-95,y:H-85,w:80,h:65}];
 function updateMob(){
-  if(!isMob){mL=mR=mF=false;return}
-  mL=mR=mF=false;
+  if(!isMob){mL=mR=false;return}
+  mL=mR=false;
   for(let t of touches)for(let b of mobBtns)if(t.x>=b.x&&t.x<=b.x+b.w&&t.y>=b.y&&t.y<=b.y+b.h){
-    if(b.id==='left')mL=true;if(b.id==='right')mR=true;if(b.id==='fire')mF=true;
+    if(b.id==='left')mL=true;if(b.id==='right')mR=true;
   }
 }
 function drawMob(){
   if(!isMob||state!=='play')return;
   for(let b of mobBtns){
-    const ac=(b.id==='left'&&mL)||(b.id==='right'&&mR)||(b.id==='fire'&&mF);
+    const ac=(b.id==="left"&&mL)||(b.id==="right"&&mR);
     X.fillStyle=ac?'rgba(255,255,255,.3)':'rgba(255,255,255,.1)';rr(b.x,b.y,b.w,b.h,12);
-    X.fillStyle=ac?'#fff':'rgba(255,255,255,.55)';X.font='bold 22px sans-serif';X.textAlign='center';X.textBaseline='middle';
+    X.fillStyle=ac?'#fff':'rgba(255,255,255,.55)';X.font='bold 26px sans-serif';X.textAlign='center';X.textBaseline='middle';
     X.fillText(b.l,b.x+b.w/2,b.y+b.h/2);
   }
   X.textBaseline='alphabetic';
