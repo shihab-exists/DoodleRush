@@ -1,106 +1,620 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Doodle Rush: Dimensions Above</title>
-  <link rel="stylesheet" href="css/style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Doodle Rush</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#222; display:flex; justify-content:center; align-items:center; height:100vh; overflow:hidden; font-family:'Segoe UI',sans-serif; touch-action:none; user-select:none; }
+canvas { border-radius:8px; box-shadow:0 0 30px rgba(0,0,0,.5); display:block; }
+/* Mobile buttons */
+#mobileUI { display:none; position:fixed; bottom:0; left:0; right:0; height:80px; z-index:20; pointer-events:none; }
+#mobileUI.on { display:block; }
+.mbtn { position:absolute; bottom:14px; width:72px; height:58px; border-radius:14px; background:rgba(255,255,255,.12); display:flex; align-items:center; justify-content:center; font-size:26px; color:rgba(255,255,255,.4); pointer-events:auto; cursor:pointer; }
+.mbtn:active { background:rgba(255,255,255,.25); color:rgba(255,255,255,.7); }
+#mbL { left:14px; }
+#mbR { right:14px; }
+/* Pause button */
+#pauseBtn { position:fixed; top:10px; right:10px; width:36px; height:36px; border-radius:50%; background:rgba(0,0,0,.2); border:none; color:rgba(0,0,0,.5); font-size:18px; cursor:pointer; z-index:15; display:none; }
+#pauseBtn.on { display:block; }
+#pauseBtn:active { background:rgba(0,0,0,.35); }
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <canvas id="canvas" width="422" height="552"></canvas>
-    <img id="sprite" src="https://i.imgur.com/2WEhF.png" alt="">
+<canvas id="c"></canvas>
+<div id="mobileUI"><div class="mbtn" id="mbL">◀</div><div class="mbtn" id="mbR">▶</div></div>
+<button id="pauseBtn">⏸</button>
+<script>
+// ═══════════════════════════════════════════════════
+//  DOODLE RUSH
+// ═══════════════════════════════════════════════════
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 400, H = 600;
+canvas.width = W; canvas.height = H;
 
-    <!-- HUD -->
-    <div id="hud">
-      <div><span id="hudScore">⭐ 0</span></div>
-      <div>
-        <span id="hudCoins" class="hl">🪙 0</span>
-        <span id="hudShield" class="hl" style="display:none">🛡️</span>
-      </div>
-    </div>
+// Scale canvas to fit screen
+function fitCanvas() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width = (W * s) + 'px';
+  canvas.style.height = (H * s) + 'px';
+}
+fitCanvas(); window.addEventListener('resize', fitCanvas);
 
-    <!-- Mobile Buttons -->
-    <div id="mobL">◀</div>
-    <div id="mobR">▶</div>
+const isMob = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 
-    <!-- UI Screens -->
-    <div id="ui">
-      <!-- Menu -->
-      <div id="menuScreen" class="show">
-        <div class="panel">
-          <h1 class="title">Doodle Rush</h1>
-          <h2>Dimensions Above</h2>
-          <p id="menuBest">Best: 0 · 🪙 0</p>
-          <button class="gbtn" onclick="startGame()">▶️ Play</button><br>
-          <button class="gbtn sm" onclick="showScreen('skinScreen')">🎨 Skins</button>
-          <button class="gbtn sm" onclick="showScreen('missionScreen')">📋 Missions</button>
-          <button class="gbtn sm" onclick="showScreen('settingScreen')">⚙️ Settings</button>
-        </div>
-      </div>
+// ─── Input ───
+const keys = {};
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space') e.preventDefault();
+  if (e.code === 'Space' && gameState === 'menu') startGame();
+  if (e.code === 'Space' && gameState === 'over') startGame();
+  if (e.code === 'Escape' && gameState === 'playing') pauseGame();
+  if (e.code === 'Escape' && gameState === 'paused') resumeGame();
+});
+document.addEventListener('keyup', e => { keys[e.code] = false; });
 
-      <!-- Skins -->
-      <div id="skinScreen">
-        <div class="panel">
-          <h2>🎨 Skins</h2>
-          <div class="row" id="skinList"></div>
-          <p id="skinCoins" class="small"></p>
-          <button class="gbtn sm gray" onclick="showScreen('menuScreen')">← Back</button>
-        </div>
-        
+// Touch movement
+let touchL = false, touchR = false;
+document.getElementById('mbL').addEventListener('touchstart', e => { e.preventDefault(); touchL = true; }, {passive:false});
+document.getElementById('mbL').addEventListener('touchend', e => { e.preventDefault(); touchL = false; }, {passive:false});
+document.getElementById('mbR').addEventListener('touchstart', e => { e.preventDefault(); touchR = true; }, {passive:false});
+document.getElementById('mbR').addEventListener('touchend', e => { e.preventDefault(); touchR = false; }, {passive:false});
 
-      <!-- Missions -->
-      <div id="missionScreen">
-        <div class="panel scrollable">
-          <h2>📋 Daily Missions</h2>
-          <p class="small" id="mDate"></p>
-          <div id="missionList"></div>
-          <button class="gbtn sm gray" onclick="showScreen('menuScreen')">← Back</button>
-        </div>
-      </div>
+// Pause button
+document.getElementById('pauseBtn').addEventListener('click', () => {
+  if (gameState === 'playing') pauseGame();
+  else if (gameState === 'paused') resumeGame();
+});
 
-      <!-- Settings -->
-      <div id="settingScreen">
-        <div class="panel">
-          <h2>⚙️ Settings</h2>
-          <div class="srow">Sound <div class="toggle on" id="togSfx" onclick="togSet('sfx',this)"></div></div>
-          <div class="srow">Music <div class="toggle on" id="togMusic" onclick="togSet('music',this)"></div></div>
-          <div class="srow">Tilt 📱 <div class="toggle" id="togTilt" onclick="togSet('tilt',this)"></div></div>
-          <div class="setting-group">
-            <span>Difficulty</span>
-            <div class="diff-row">
-              <button class="diff-btn" onclick="setDiff('easy',this)">Easy</button>
-              <button class="diff-btn sel" onclick="setDiff('normal',this)">Normal</button>
-              <button class="diff-btn" onclick="setDiff('hard',this)">Hard</button>
-            </div>
-          </div>
-          <p class="small">← → or A/D move · Space restart</p>
-          <button class="gbtn sm gray" onclick="showScreen('menuScreen')">← Back</button>
-        </div>
-      </div>
+// Canvas click for menu/over/pause
+canvas.addEventListener('click', e => {
+  const r = canvas.getBoundingClientRect();
+  const cx = (e.clientX - r.left) / (r.width / W);
+  const cy = (e.clientY - r.top) / (r.height / H);
 
-      <!-- Game Over -->
-      <div id="overScreen">
-        <div class="panel">
-          <h1 class="go-title">Game Over!</h1>
-          <p id="overScore" class="go-score"></p>
-          <p id="overBest" class="go-best"></p>
-          <p id="overStats" class="small"></p>
-          <button class="gbtn" onclick="startGame()">🔄 Play Again</button>
-          <button class="gbtn sm gray" onclick="showScreen('menuScreen')">🏠 Menu</button>
-        </div>
-      </div>
-    </div>
-  </div>
+  if (gameState === 'menu') {
+    // Play button area
+    if (cx > W/2-80 && cx < W/2+80 && cy > 340 && cy < 390) startGame();
+  }
+  if (gameState === 'over') {
+    if (cx > W/2-80 && cx < W/2+80 && cy > H/2+30 && cy < H/2+70) startGame();
+  }
+  if (gameState === 'paused') {
+    // Resume
+    if (cx > W/2-90 && cx < W/2+90 && cy > H/2-10 && cy < H/2+30) resumeGame();
+    // Restart
+    if (cx > W/2-90 && cx < W/2+90 && cy > H/2+40 && cy < H/2+80) startGame();
+    // Quit
+    if (cx > W/2-90 && cx < W/2+90 && cy > H/2+90 && cy < H/2+130) quitToMenu();
+  }
+});
+// Touch on canvas for menu/over
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  const cx = (e.touches[0].clientX - r.left) / (r.width / W);
+  const cy = (e.touches[0].clientY - r.top) / (r.height / H);
 
-  <!-- JS Modules -->
-  <script src="js/storage.js"></script>
-  <script src="js/config.js"></script>
-  <script src="js/missions.js"></script>
-  <script src="js/ui.js"></script>
-  <script src="js/objects.js"></script>
-  <script src="js/game.js"></script>
-  <script src="js/input.js"></script>
-  <script src="js/main.js"></script>
+  if (gameState === 'menu') {
+    if (cx > W/2-80 && cx < W/2+80 && cy > 340 && cy < 390) startGame();
+  }
+  if (gameState === 'over') {
+    if (cx > W/2-80 && cx < W/2+80 && cy > H/2+30 && cy < H/2+70) startGame();
+  }
+  if (gameState === 'paused') {
+    if (cx > W/2-90 && cx < W/2+90 && cy > H/2-10 && cy < H/2+30) resumeGame();
+    if (cx > W/2-90 && cx < W/2+90 && cy > H/2+40 && cy < H/2+80) startGame();
+    if (cx > W/2-90 && cx < W/2+90 && cy > H/2+90 && cy < H/2+130) quitToMenu();
+  }
+}, {passive:false});
+
+
+// ─── Sound Effects (Web Audio Synth) ───
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+function initAudio() { if (!audioCtx) audioCtx = new AudioCtx(); }
+function playTone(freq, dur, type, vol) {
+  if (!audioCtx) return;
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(vol || 0.15, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + (dur || 0.15));
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + (dur || 0.15));
+  } catch(e) {}
+}
+function sfxJump() { playTone(400, 0.1, 'sine', 0.12); }
+function sfxSpring() { playTone(600, 0.15, 'sine', 0.15); playTone(900, 0.1, 'sine', 0.1); }
+function sfxTrampoline() { playTone(500, 0.12, 'triangle', 0.15); playTone(800, 0.15, 'triangle', 0.12); }
+function sfxRocket() { playTone(200, 0.3, 'sawtooth', 0.1); playTone(400, 0.2, 'sawtooth', 0.08); }
+function sfxBreak() { playTone(150, 0.2, 'square', 0.08); playTone(80, 0.15, 'square', 0.06); }
+function sfxEnemyDie() { playTone(300, 0.08, 'square', 0.1); playTone(500, 0.1, 'square', 0.08); }
+function sfxDie() { playTone(200, 0.3, 'sawtooth', 0.15); playTone(100, 0.4, 'sawtooth', 0.12); }
+function sfxClick() { playTone(800, 0.05, 'sine', 0.08); }
+
+// ─── Game State ───
+let gameState = 'menu'; // menu, playing, paused, over
+let doodler, platforms, enemies, score, highScore = 0, cameraY, gap;
+function getGap() {
+  if (score < 30) return H / 12;   // packed — easy start
+  if (score < 80) return H / 10;   // dense
+  if (score < 150) return H / 9;   // comfortable
+  if (score < 300) return H / 8;   // standard
+  if (score < 500) return H / 7;   // harder
+  if (score < 800) return H / 6;   // challenging
+  return H / 5.5;                   // expert
+}
+
+// ─── Doodler ───
+// ─── Frog Animation System ───
+let springAnim = 0;
+let trampolineAnim = 0;
+
+function triggerSpring() { springAnim = 1; }
+function triggerTrampoline() { trampolineAnim = 1; }
+function updateFrogAnimation() {
+  springAnim = Math.max(0, springAnim - 0.08);
+  trampolineAnim = Math.max(0, trampolineAnim - 0.05);
+}
+
+function drawAnimatedFrogDoodler(ctx, x, y, w, h, goingLeft) {
+  let scaleX = 1, scaleY = 1, rotation = 0;
+  if (trampolineAnim > 0) {
+    const p = 1 - trampolineAnim;
+    if (p < 0.2) { scaleX = 1.3; scaleY = 0.7; }
+    else if (p < 0.45) { scaleX = 0.65; scaleY = 1.55; }
+    else { const t = (p - 0.45) / 0.55; scaleX = 0.65 + t * 0.35; scaleY = 1.55 - t * 0.55; rotation = Math.sin(t * Math.PI) * 0.15; }
+  } else if (springAnim > 0) {
+    const p = 1 - springAnim;
+    if (p < 0.25) { scaleX = 1.15; scaleY = 0.85; }
+    else if (p < 0.5) { scaleX = 0.85; scaleY = 1.25; }
+    else { const t = (p - 0.5) / 0.5; scaleX = 0.85 + t * 0.15; scaleY = 1.25 - t * 0.25; }
+  }
+  ctx.save();
+  ctx.translate(x + w / 2, y + h / 2);
+  ctx.rotate(rotation);
+  ctx.scale(scaleX, scaleY);
+  drawFrogDoodler(ctx, -w / 2, -h / 2, w, h, goingLeft);
+  ctx.restore();
+}
+
+function drawFrogDoodler(ctx, x, y, w, h, goingLeft) {
+  const d = goingLeft ? -1 : 1;
+  ctx.save();
+  ctx.fillStyle='#7BBF3A';
+  ctx.beginPath(); ctx.ellipse(x+w/2,y+h*.55,w*.38,h*.42,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#A2D94E';
+  ctx.beginPath(); ctx.ellipse(x+w/2,y+h*.55,w*.25,h*.3,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#7BBF3A';
+  ctx.beginPath(); ctx.ellipse(x+w/2+d*w*.35,y+h*.35,w*.22,h*.18,d*.3,0,Math.PI*2); ctx.fill();
+  const ex=x+w/2+d*w*.08, ey=y+h*.3;
+  ctx.fillStyle='#fff';
+  ctx.beginPath(); ctx.ellipse(ex-6,ey,7,9,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(ex+8,ey,7,9,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#000';
+  ctx.beginPath(); ctx.ellipse(ex-6+d*2,ey,3,4,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(ex+8+d*2,ey,3,4,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#5A9E2F';
+  ctx.beginPath(); ctx.ellipse(x+w*.32,y+h*.92,8,5,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x+w*.68,y+h*.92,8,5,0,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+// ─── Rocket Frog Boost Animation ───
+let rocketAnim = 0;
+function triggerRocketBoost() { rocketAnim = 1; }
+function updateRocketAnimation() { rocketAnim = Math.max(0, rocketAnim - 0.03); }
+
+function drawAnimatedRocketFrog(ctx, x, y, w, h, goingLeft) {
+  const progress = 1 - rocketAnim;
+  let scaleX = 1, scaleY = 1, flameScale = 1, shake = 0;
+  if (rocketAnim > 0) {
+    if (progress < 0.15) { scaleX = 1.2; scaleY = 0.8; }
+    else if (progress < 0.35) { scaleX = 0.75; scaleY = 1.45; flameScale = 1.8; }
+    else { scaleX = 1; scaleY = 1; flameScale = 1 + Math.sin(Date.now() * 0.04) * 0.35; shake = Math.sin(Date.now() * 0.08) * 1.5; }
+  }
+  ctx.save();
+  ctx.translate(x + w / 2 + shake, y + h / 2);
+  ctx.scale(scaleX, scaleY);
+  drawRocketFrogSkin(ctx, -w / 2, -h / 2, w, h, goingLeft, flameScale);
+  ctx.restore();
+}
+
+function drawRocketFrogSkin(ctx, x, y, w, h, goingLeft, flameScale) {
+  flameScale = flameScale || 1;
+  const d = goingLeft ? -1 : 1;
+  ctx.fillStyle = '#e5e7eb';
+  ctx.beginPath(); ctx.ellipse(x+w/2, y+h*0.55, w*0.28, h*0.42, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#ef4444';
+  ctx.beginPath(); ctx.moveTo(x+w/2, y); ctx.lineTo(x+w*0.65, y+h*0.22); ctx.lineTo(x+w*0.35, y+h*0.22); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#dc2626';
+  ctx.beginPath(); ctx.moveTo(x+w*0.28, y+h*0.7); ctx.lineTo(x+w*0.08, y+h*0.92); ctx.lineTo(x+w*0.30, y+h*0.86); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x+w*0.72, y+h*0.7); ctx.lineTo(x+w*0.92, y+h*0.92); ctx.lineTo(x+w*0.70, y+h*0.86); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#94a3b8';
+  ctx.beginPath(); ctx.arc(x+w/2, y+h*0.42, w*0.17, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#7dd3fc';
+  ctx.beginPath(); ctx.arc(x+w/2, y+h*0.42, w*0.14, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#7BBF3A';
+  ctx.beginPath(); ctx.arc(x+w/2, y+h*0.43, w*0.10, 0, Math.PI*2); ctx.fill();
+  const eyeY = y + h * 0.38;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(x+w/2-5, eyeY, 3.5, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x+w/2+5, eyeY, 3.5, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.arc(x+w/2-5+d, eyeY, 1.5, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x+w/2+5+d, eyeY, 1.5, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#f97316';
+  ctx.beginPath(); ctx.moveTo(x+w*0.42, y+h*0.95); ctx.lineTo(x+w*0.50, y+h*(1.15+flameScale*0.15)); ctx.lineTo(x+w*0.58, y+h*0.95); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#fde047';
+  ctx.beginPath(); ctx.moveTo(x+w*0.45, y+h*0.95); ctx.lineTo(x+w*0.50, y+h*(1.05+flameScale*0.10)); ctx.lineTo(x+w*0.55, y+h*0.95); ctx.closePath(); ctx.fill();
+}
+
+class Doodler {
+  constructor() {
+    this.width = 46; this.height = 54;
+    this.x = W/2 - this.width/2; this.y = H/2;
+    this.velocity = 0; this.gravity = 0.35;
+    this.jumpForce = 13; this.goingLeft = false; this.moveSpeed = 5;
+    this.rocketMode = false; this.rocketTimer = 0; this.rocketWobble = 0;
+  }
+  jump(force) { this.velocity = -(force || this.jumpForce); }
+  update() {
+    // Rocket mode
+    if (this.rocketMode) {
+      this.rocketTimer--; this.rocketWobble += 0.15;
+      this.velocity = -18; // constant upward thrust
+      if (this.rocketTimer <= 0) this.rocketMode = false;
+    }
+    if (this.x + this.width < 0) this.x = W;
+    if (this.x > W) this.x = -this.width;
+    this.velocity += this.gravity;
+    this.y += this.velocity;
+    if (this.velocity < -49) this.velocity = -49; // cap for springs
+    if (keys['ArrowLeft'] || keys['KeyA'] || touchL) { this.x -= this.moveSpeed; this.goingLeft = true; }
+    if (keys['ArrowRight'] || keys['KeyD'] || touchR) { this.x += this.moveSpeed; this.goingLeft = false; }
+    // Platform collision (only falling)
+    if (this.velocity > 0) {
+      for (let p of platforms) {
+        if (p.broken) continue;
+        if (this.y + this.height >= p.y && this.y + this.height <= p.y + p.height + 6 &&
+            this.x + this.width > p.x && this.x < p.x + p.width) {
+          const bf = p.bounce();
+          if (bf === 'rocket') { this.rocketMode = true; this.rocketTimer = 150; this.velocity = -20; triggerRocketBoost(); }
+          else this.jump(bf);
+        }
+      }
+    }
+  }
+  draw() {
+    if (this.rocketMode) {
+      drawAnimatedRocketFrog(ctx, this.x - 2, this.y - 10, 50, 70, this.goingLeft);
+      return;
+    }
+    drawAnimatedFrogDoodler(ctx, this.x, this.y, 46, 54, this.goingLeft);
+  }
+}
+
+// ─── Platform Types ───
+// normal, spring, trampoline, rocket, breaking
+class Platform {
+  constructor(x, y, type) {
+    this.x = x; this.y = y; this.width = 68; this.height = 14;
+    this.type = type || 'normal'; this.broken = false; this.springAnim = 0;
+  }
+  bounce() {
+    if (this.type === 'spring') { this.springAnim = 1; sfxSpring(); triggerSpring(); return 26; }
+    if (this.type === 'trampoline') { sfxTrampoline(); triggerTrampoline(); return 30; }
+    if (this.type === 'rocket') { sfxRocket(); return 'rocket'; }
+    if (this.type === 'breaking') { this.broken = true; sfxBreak(); return 10; }
+    sfxJump(); return 10; // normal
+  }
+  draw() {
+    if (this.broken) return;
+    ctx.save();
+    if (this.type === 'normal') {
+      const g=ctx.createLinearGradient(this.x,this.y,this.x,this.y+this.height);
+      g.addColorStop(0,'#5ABF2A'); g.addColorStop(1,'#3A8F0A'); ctx.fillStyle=g;
+      this.roundRect(); ctx.fillStyle='rgba(255,255,255,.25)'; ctx.fillRect(this.x+4,this.y+2,this.width-8,3);
+    } else if (this.type === 'spring') {
+      const g=ctx.createLinearGradient(this.x,this.y,this.x,this.y+this.height);
+      g.addColorStop(0,'#5ABF2A'); g.addColorStop(1,'#3A8F0A'); ctx.fillStyle=g;
+      this.roundRect();
+      // Spring coil
+      const sx=this.x+this.width/2;
+      ctx.strokeStyle='#FFD700'; ctx.lineWidth=3; ctx.beginPath();
+      for(let i=0;i<=12;i++){const t=i/12;const px=sx+Math.sin(t*3*Math.PI*2)*6;const py=this.y-t*(12+this.springAnim*8);i===0?ctx.moveTo(px,py):ctx.lineTo(px,py)}
+      ctx.stroke();
+      ctx.fillStyle='#FF8C00'; ctx.beginPath(); ctx.arc(sx,this.y-12-this.springAnim*8,6,0,Math.PI*2); ctx.fill();
+      if(this.springAnim>0)this.springAnim*=.9;
+    } else if (this.type === 'trampoline') {
+      const g=ctx.createLinearGradient(this.x,this.y,this.x,this.y+this.height);
+      g.addColorStop(0,'#FF4444'); g.addColorStop(1,'#CC0000'); ctx.fillStyle=g;
+      this.roundRect();
+      ctx.fillStyle='#FFD700'; const cx=this.x+this.width/2;
+      ctx.beginPath(); ctx.moveTo(cx,this.y-8); ctx.lineTo(cx-5,this.y-2); ctx.lineTo(cx+5,this.y-2); ctx.fill();
+    } else if (this.type === 'rocket') {
+      const g=ctx.createLinearGradient(this.x,this.y,this.x,this.y+this.height);
+      g.addColorStop(0,'#5ABF2A'); g.addColorStop(1,'#3A8F0A'); ctx.fillStyle=g;
+      this.roundRect();
+      // Rocket on top
+      const rx=this.x+this.width/2-8,ry=this.y-20;
+      ctx.fillStyle='#E0E0E0'; ctx.fillRect(rx,ry,16,18);
+      ctx.fillStyle='#FF4444'; ctx.beginPath(); ctx.moveTo(rx,ry); ctx.lineTo(rx+8,ry-9); ctx.lineTo(rx+16,ry); ctx.fill();
+      ctx.fillStyle='#4488FF'; ctx.beginPath(); ctx.arc(rx+8,ry+5,3.5,0,Math.PI*2); ctx.fill();
+    } else if (this.type === 'breaking') {
+      ctx.fillStyle='#8B7355'; this.roundRect();
+      ctx.strokeStyle='#5A4020'; ctx.lineWidth=1; ctx.beginPath();
+      ctx.moveTo(this.x+20,this.y); ctx.lineTo(this.x+25,this.y+this.height);
+      ctx.moveTo(this.x+45,this.y); ctx.lineTo(this.x+40,this.y+this.height); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  roundRect() {
+    const r=4,x=this.x,y=this.y,w=this.width,h=this.height;
+    ctx.beginPath(); ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
+    ctx.quadraticCurveTo(x+w,y,x+w,y+r); ctx.lineTo(x+w,y+h-r);
+    ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h); ctx.lineTo(x+r,y+h);
+    ctx.quadraticCurveTo(x,y+h,x,y+h-r); ctx.lineTo(x,y+r);
+    ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath(); ctx.fill();
+  }
+}
+
+// ─── Enemy Types ───
+class Enemy {
+  constructor(x, y, type) {
+    this.x = x; this.y = y; this.type = type; this.w = 32; this.h = 32;
+    this.vx = (Math.random()-.5)*2; this.t = Math.random()*Math.PI*2; this.hp = 1;
+  }
+  update() {
+    this.t += .06;
+    this.x += this.vx; this.y += Math.sin(this.t) * .4;
+    if (this.x < -30) this.x = W+10; if (this.x > W+30) this.x = -10;
+  }
+  draw() {
+    const cx = this.x+16, cy = this.y+16;
+    ctx.save();
+    if (this.type === 'alien') {
+      ctx.fillStyle='#44FF44'; ctx.beginPath(); ctx.ellipse(cx,cy,14,16,0,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#000'; ctx.beginPath(); ctx.ellipse(cx-5,cy-4,5,7,0,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx+5,cy-4,5,7,0,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#0F0'; ctx.beginPath(); ctx.ellipse(cx-5,cy-4,2,3,0,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx+5,cy-4,2,3,0,0,Math.PI*2); ctx.fill();
+    } else if (this.type === 'ufo') {
+      ctx.fillStyle='#888'; ctx.beginPath(); ctx.ellipse(cx,cy,20,8,0,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#AAF'; ctx.beginPath(); ctx.ellipse(cx,cy-4,10,10,0,Math.PI,0); ctx.fill();
+      for(let i=0;i<4;i++){ctx.fillStyle=(Math.floor(this.t*2+i)%3===0)?'#FF0':'#F80';ctx.beginPath();ctx.arc(cx-12+i*8,cy+3,2,0,Math.PI*2);ctx.fill()}
+    } else if (this.type === 'virus') {
+      for(let i=0;i<8;i++){const a=this.t*.3+(i/8)*Math.PI*2;ctx.fillStyle='#CC0000';ctx.beginPath();ctx.arc(cx+Math.cos(a)*16,cy+Math.sin(a)*16,4,0,Math.PI*2);ctx.fill()}
+      ctx.fillStyle='#FF2222'; ctx.beginPath(); ctx.arc(cx,cy,11,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(cx-4,cy-2,3,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx+4,cy-2,3,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#000'; ctx.beginPath(); ctx.arc(cx-3,cy-1,1.5,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx+5,cy-1,1.5,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+  }
+  hits(d) {
+    return d.x+d.width > this.x+4 && d.x < this.x+this.w-4 &&
+           d.y+d.height > this.y+4 && d.y < this.y+this.h-4;
+  }
+}
+
+// ─── Spawn Logic ───
+function pickPlatformType() {
+  if (score < 30) return 'normal';
+  const r = Math.random();
+  if (r < .12) return 'spring';
+  if (r < .20) return 'trampoline';
+  if (r < .24) return 'rocket';
+  if (r < .34) return 'breaking';
+  return 'normal';
+}
+
+function trySpawnEnemy(y) {
+  if (score < 50) return;
+  if (Math.random() > 0.06) return;
+  const types = ['alien','ufo','virus'];
+  enemies.push(new Enemy(Math.random()*(W-32), y - 40 - Math.random()*40, types[Math.floor(Math.random()*types.length)]));
+}
+
+// ─── Game Functions ───
+function startGame() {
+  initAudio(); sfxClick();
+  gameState = 'playing';
+  doodler = new Doodler();
+  platforms = []; enemies = []; score = 0;
+  gap = getGap();
+  platforms.push(new Platform(W/2-34, H/2+60, 'normal'));
+  for (let i=1; i<18; i++) platforms.push(new Platform(Math.random()*(W-68), (H/2+60)-i*gap, 'normal'));
+  doodler.jump();
+  cameraY = doodler.y - H*0.4;
+  document.getElementById('pauseBtn').classList.add('on');
+  if (isMob) document.getElementById('mobileUI').classList.add('on');
+}
+
+function pauseGame() { gameState = 'paused'; }
+function resumeGame() { gameState = 'playing'; }
+function quitToMenu() {
+  gameState = 'menu';
+  document.getElementById('pauseBtn').classList.remove('on');
+  document.getElementById('mobileUI').classList.remove('on');
+}
+
+// ─── Drawing Helpers ───
+function drawBG() {
+  ctx.fillStyle='#F5F0D0'; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='rgba(200,190,160,.4)'; ctx.lineWidth=1;
+  for(let y=0;y<H;y+=24){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+  ctx.strokeStyle='rgba(220,100,100,.3)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(35,0); ctx.lineTo(35,H); ctx.stroke();
+}
+
+function drawBtn(x,y,w,h,text,color) {
+  ctx.fillStyle=color||'#7BBF3A';
+  ctx.beginPath();
+  const r=12;
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#fff'; ctx.font='bold 18px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(text,x+w/2,y+h/2);
+}
+
+// ─── Screens ───
+function drawMenu() {
+  drawBG();
+  // Dancing doodler preview
+  const t = Date.now()/1000;
+  const dy = 180 + Math.sin(t*2)*12;
+  ctx.save();
+  ctx.translate(W/2, dy); ctx.rotate(Math.sin(t*1.5)*.12); ctx.translate(-W/2, -dy);
+  // mini doodler at center
+  drawFrogDoodler(ctx, W/2-23, dy-27, 46, 54, false);
+  ctx.restore();
+  // Title
+  ctx.fillStyle='rgba(0,0,0,.15)'; ctx.font='bold 42px sans-serif'; ctx.textAlign='center'; ctx.fillText('Doodle Rush', W/2+2, 290);
+  ctx.fillStyle='#5a5816'; ctx.fillText('Doodle Rush', W/2, 288);
+  ctx.fillStyle='#aaa'; ctx.font='16px sans-serif'; ctx.fillText('Jump forever', W/2, 318);
+  if (highScore > 0) { ctx.fillStyle='#999'; ctx.font='14px sans-serif'; ctx.fillText('Best: '+highScore, W/2, 342); }
+  // Play button
+  drawBtn(W/2-80, 355, 160, 42, '▶  Play');
+  ctx.fillStyle='rgba(0,0,0,.3)'; ctx.font='12px sans-serif'; ctx.fillText('← → or A D to move · Space to start', W/2, H-20);
+}
+
+function drawPauseMenu() {
+  ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(245,240,210,.95)';
+  const pw=240,ph=200,px=(W-pw)/2,py=(H-ph)/2;
+  ctx.beginPath();
+  const r=16;
+  ctx.moveTo(px+r,py); ctx.lineTo(px+pw-r,py); ctx.quadraticCurveTo(px+pw,py,px+pw,py+r);
+  ctx.lineTo(px+pw,py+ph-r); ctx.quadraticCurveTo(px+pw,py+ph,px+pw-r,py+ph);
+  ctx.lineTo(px+r,py+ph); ctx.quadraticCurveTo(px,py+ph,px,py+ph-r);
+  ctx.lineTo(px,py+r); ctx.quadraticCurveTo(px,py,px+r,py); ctx.closePath(); ctx.fill();
+
+  ctx.fillStyle='#333'; ctx.font='bold 26px sans-serif'; ctx.textAlign='center'; ctx.fillText('Paused', W/2, py+40);
+  ctx.fillStyle='#999'; ctx.font='14px sans-serif'; ctx.fillText('Score: '+score, W/2, py+65);
+
+  drawBtn(W/2-90, H/2-10, 180, 36, 'Resume', '#7BBF3A');
+  drawBtn(W/2-90, H/2+40, 180, 36, 'Restart', '#E8A030');
+  drawBtn(W/2-90, H/2+90, 180, 36, 'Quit', '#999');
+}
+
+function drawGameOver() {
+  drawBG();
+  ctx.fillStyle='rgba(0,0,0,.4)'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(245,240,210,.95)';
+  const cw=300,ch=200,cx=(W-cw)/2,cy=(H-ch)/2;
+  ctx.beginPath(); const r=16;
+  ctx.moveTo(cx+r,cy); ctx.lineTo(cx+cw-r,cy); ctx.quadraticCurveTo(cx+cw,cy,cx+cw,cy+r);
+  ctx.lineTo(cx+cw,cy+ch-r); ctx.quadraticCurveTo(cx+cw,cy+ch,cx+cw-r,cy+ch);
+  ctx.lineTo(cx+r,cy+ch); ctx.quadraticCurveTo(cx,cy+ch,cx,cy+ch-r);
+  ctx.lineTo(cx,cy+r); ctx.quadraticCurveTo(cx,cy,cx+r,cy); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='#888'; ctx.lineWidth=2; ctx.stroke();
+
+  ctx.fillStyle='#333'; ctx.font='bold 30px sans-serif'; ctx.textAlign='center'; ctx.fillText('Game Over!', W/2, cy+45);
+  ctx.fillStyle='#555'; ctx.font='22px sans-serif'; ctx.fillText('Score: '+score, W/2, cy+80);
+  ctx.fillStyle='#7BBF3A'; ctx.font='bold 18px sans-serif';
+  ctx.fillText(score>=highScore?'🏆 New Best!':'Best: '+highScore, W/2, cy+110);
+  drawBtn(W/2-80, H/2+30, 160, 36, 'Play Again');
+}
+
+// ─── Main Loop ───
+function gameLoop() {
+  if (gameState === 'menu') {
+    drawMenu();
+  }
+  else if (gameState === 'playing') {
+    updateFrogAnimation();
+    updateRocketAnimation();
+    doodler.update();
+
+    // Enemies
+    for (let i=enemies.length-1; i>=0; i--) {
+      enemies[i].update();
+      if (enemies[i].y > cameraY+H+100) { enemies.splice(i,1); continue; }
+      if (enemies[i].hits(doodler)) {
+        if (doodler.rocketMode) {
+          // Rocket mode — destroy everything
+          enemies.splice(i,1); score += 5; sfxEnemyDie();
+        } else if (doodler.velocity > 0 && doodler.y + doodler.height - 8 < enemies[i].y + enemies[i].h/2) {
+          // Landing on top — crush enemy
+          enemies.splice(i,1); doodler.jump(12); score += 5; sfxEnemyDie();
+        } else if (doodler.velocity < -10) {
+          // Powered jump (spring/trampoline) — destroy enemy
+          enemies.splice(i,1); score += 5; sfxEnemyDie();
+        } else if (doodler.velocity <= 0) {
+          // Normal jump rising — pass through safely
+        } else {
+          // Falling into enemy sideways — die
+          gameState = 'over'; sfxDie();
+          if (score > highScore) highScore = score;
+          document.getElementById('pauseBtn').classList.remove('on');
+          document.getElementById('mobileUI').classList.remove('on');
+        }
+      }
+    }
+
+    // Camera
+    if (doodler.y > cameraY + H) {
+      gameState = 'over'; sfxDie();
+      if (score > highScore) highScore = score;
+      document.getElementById('pauseBtn').classList.remove('on');
+      document.getElementById('mobileUI').classList.remove('on');
+    }
+    const target = doodler.y - H*0.4;
+    if (target < cameraY) cameraY = target;
+
+    // Generate platforms
+    const top = platforms[platforms.length-1];
+    if (doodler.y < top.y + 200) {
+      const type = pickPlatformType();
+      gap = getGap();
+      platforms.push(new Platform(Math.random()*(W-68), top.y - gap, type));
+      trySpawnEnemy(top.y - gap);
+    }
+
+    // Remove old
+    while (platforms.length>0 && platforms[0].y > cameraY+H+50) { platforms.shift(); score++; }
+
+    // Draw
+    drawBG();
+    ctx.save(); ctx.translate(0, -cameraY);
+    for (let p of platforms) p.draw();
+    for (let e of enemies) e.draw();
+    doodler.draw();
+    ctx.restore();
+
+    // HUD
+    ctx.fillStyle='rgba(0,0,0,.5)'; ctx.font='bold 20px sans-serif'; ctx.textAlign='right'; ctx.fillText(score, W-15, 28);
+  }
+  else if (gameState === 'paused') {
+    // Redraw last frame frozen
+    drawBG();
+    ctx.save(); ctx.translate(0, -cameraY);
+    for (let p of platforms) p.draw();
+    for (let e of enemies) e.draw();
+    doodler.draw();
+    ctx.restore();
+    ctx.fillStyle='rgba(0,0,0,.5)'; ctx.font='bold 20px sans-serif'; ctx.textAlign='right'; ctx.fillText(score, W-15, 28);
+    // Pause overlay
+    drawPauseMenu();
+  }
+  else if (gameState === 'over') {
+    drawGameOver();
+  }
+
+  requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
 </body>
 </html>
